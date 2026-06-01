@@ -1,0 +1,14 @@
+MEDICATION RECONCILIATION NOTE - SYNTHETIC TEST DATA (NOT REAL PATIENT DATA)
+
+Patient: Robert Johnson (Synthetic)
+Date: 2024-04-01
+
+CURRENT MEDICATIONS:
+1. Metformin 500mg twice daily - prescribed for glucose management.
+2. Lisinopril 10mg once daily - prescribed for blood pressure control.
+3. Atorvastatin 20mg once daily at bedtime - prescribed for cholesterol management.
+
+No vitals were recorded during this medication review visit.
+No new diagnoses were assessed at this encounter.
+
+Pharmacist: B. Test (Synthetic)

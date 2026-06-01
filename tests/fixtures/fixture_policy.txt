@@ -1,0 +1,35 @@
+SYNTHETIC INSURANCE COVERAGE POLICY DOCUMENT
+This document contains synthetic test data only and is not a real insurance policy.
+
+SECTION 1: TYPE 2 DIABETES MANAGEMENT COVERAGE
+Coverage is available for Type 2 Diabetes Mellitus management when the patient has a confirmed
+diagnosis with ICD-10 code E11.x documented by a licensed physician. A current HbA1c value must
+be present in the clinical record. Patients with HbA1c of 7.0 percent or higher qualify for
+ongoing diabetes management coverage under this policy.
+
+SECTION 2: HYPERTENSION AND BLOOD PRESSURE CRITERIA
+Coverage for hypertension management requires documented blood pressure measurements in the
+clinical record. For standard coverage tier, the patient's systolic blood pressure must be
+below 160 mmHg at the time of evaluation. Patients presenting with systolic blood pressure
+at or above 160 mmHg require additional clinical documentation and may be subject to
+enhanced review before a coverage determination is issued.
+
+SECTION 3: PRIOR AUTHORIZATION REQUIREMENTS
+Certain medications require prior authorization before coverage is approved. Metformin
+(biguanide class antidiabetic) requires a completed prior authorization request. The prior
+authorization must include the treating physician's attestation, current HbA1c values, and
+documentation that first-line dietary and lifestyle interventions have been attempted.
+Dispensing without prior authorization will result in claim denial.
+
+SECTION 4: ESCALATION AND HUMAN REVIEW CRITERIA
+Cases that do not clearly satisfy all applicable coverage criteria must be escalated to the
+medical review board for human review. Escalation is required when clinical documentation
+is incomplete, ICD-10 codes are absent or ambiguous, key vital sign data is missing, or
+when the clinical picture is inconsistent with the requested coverage category. Coverage
+determinations cannot be issued automatically for escalated cases.
+
+SECTION 5: DOCUMENTATION REQUIREMENTS
+All coverage requests must include: (a) a signed clinical note from the treating provider,
+(b) relevant diagnostic codes in ICD-10 format, (c) current medication list with dosages,
+and (d) recent vital signs including blood pressure. Incomplete submissions will be returned
+for additional documentation before a determination can be made.
