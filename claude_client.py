@@ -2,6 +2,7 @@ import json
 import os
 
 from anthropic import Anthropic
+from langsmith import traceable
 
 EXTRACTION_PROMPT = """\
 You are a medical chart auditing assistant. Extract specific clinical data from the clinical note below.
@@ -50,6 +51,7 @@ def get_client() -> Anthropic:
     return Anthropic(api_key=api_key)
 
 
+@traceable(name="extract_clinical_data", run_type="llm")
 def extract_clinical_data(document_text: str) -> dict:
     """
     Send document text to Claude and return a structured clinical extraction dict.

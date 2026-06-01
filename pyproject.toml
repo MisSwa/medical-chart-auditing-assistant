@@ -12,13 +12,14 @@ dependencies = [
     "faiss-cpu>=1.8.0",
     "numpy>=1.26.0",
     "pytesseract>=0.3.10",
+    "fpdf2>=2.7.9",
+    "langsmith>=0.2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-mock>=3.14.0",
-    "fpdf2>=2.7.9",
     "ruff>=0.4.0",
 ]
 

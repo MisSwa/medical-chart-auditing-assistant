@@ -1,4 +1,4 @@
-from session import clear_session, count_fields, get_extraction, initialize_session, store_extraction
+from session import clear_session, count_fields, get_extraction, initialize_session, log_audit_event, store_extraction
 
 SAMPLE_EXTRACTION = {
     "vitals": {
@@ -77,3 +77,34 @@ def test_count_fields_on_empty_extraction():
     total, low = count_fields(empty)
     assert total == 0
     assert low == 0
+
+
+def test_log_audit_event_appends_entry():
+    state = {}
+    initialize_session(state)
+    log_audit_event(state, "document_uploaded", "chart.pdf", {"size_kb": 12.3, "format": ".pdf"})
+    assert len(state["audit_trail"]) == 1
+
+
+def test_log_audit_event_entry_has_required_keys():
+    state = {}
+    initialize_session(state)
+    log_audit_event(state, "extraction_complete", "chart.pdf", {"total_fields": 5, "low_confidence_count": 1})
+    entry = state["audit_trail"][0]
+    assert "timestamp" in entry
+    assert "event_type" in entry
+    assert "filename" in entry
+    assert "payload" in entry
+
+
+def test_clear_session_resets_audit_trail(tmp_path):
+    state = {}
+    initialize_session(state)
+    log_audit_event(state, "document_uploaded", "chart.pdf", {"size_kb": 5.0, "format": ".pdf"})
+    assert len(state["audit_trail"]) == 1
+
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    clear_session(state, str(uploads))
+
+    assert state["audit_trail"] == []

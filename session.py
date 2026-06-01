@@ -5,6 +5,7 @@ All functions operate on a plain dict so they can be unit-tested without Streaml
 In app.py, pass st.session_state directly.
 """
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -18,6 +19,10 @@ def initialize_session(state: dict) -> None:
         state["policy_filename"] = None
     if "determinations" not in state:
         state["determinations"] = {}
+    if "reports" not in state:
+        state["reports"] = {}
+    if "audit_trail" not in state:
+        state["audit_trail"] = []
 
 
 def store_extraction(state: dict, filename: str, extraction: dict) -> None:
@@ -31,12 +36,34 @@ def get_extraction(state: dict, filename: str) -> dict | None:
     return state.get("extractions", {}).get(filename)
 
 
+def log_audit_event(state: dict, event_type: str, filename: str, payload: dict) -> None:
+    """
+    Append a timestamped audit event to state["audit_trail"].
+    Never mutates existing entries — only appends.
+
+    Args:
+        state: The session state dict.
+        event_type: One of "document_uploaded", "extraction_complete", "policy_check_complete".
+        filename: The document filename associated with the event.
+        payload: Event-specific data dict.
+    """
+    initialize_session(state)
+    state["audit_trail"].append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": event_type,
+        "filename": filename,
+        "payload": payload,
+    })
+
+
 def clear_session(state: dict, uploads_dir: str) -> None:
     """Clear all session state and remove uploaded files from disk."""
     state["extractions"] = {}
     state["policy_store"] = None
     state["policy_filename"] = None
     state["determinations"] = {}
+    state["reports"] = {}
+    state["audit_trail"] = []
     uploads_path = Path(uploads_dir)
     if uploads_path.exists():
         shutil.rmtree(uploads_path)

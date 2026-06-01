@@ -6,11 +6,14 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from claude_client import extract_clinical_data
+from escalation import apply_escalation
 from extractor import extract_text
 from policy_reasoner import reason_against_policy
 from policy_store import ingest_policy_document, retrieve_policy_chunks
+from report_builder import build_report
+from report_exporter import export_report_to_pdf
 from rules_engine import COVERAGE_RULES, evaluate_rules
-from session import clear_session, count_fields, initialize_session, store_extraction
+from session import clear_session, count_fields, initialize_session, log_audit_event, store_extraction
 
 load_dotenv()
 
@@ -19,7 +22,7 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 
 st.set_page_config(page_title="Medical Chart Auditing Assistant", layout="wide")
 st.title("Medical Chart Auditing Assistant")
-st.caption("Phase 2 — Policy Engine & Audit Determination")
+st.caption("Phase 3 — Audit Report Generation & Escalation")
 
 # ── API key validation at startup — fail loudly ─────────────────────────────
 if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -56,6 +59,20 @@ with st.sidebar:
         for fname in extractions:
             st.markdown(f"- {fname}")
 
+    # Audit Trail
+    st.subheader("Audit Trail")
+    audit_trail = st.session_state.get("audit_trail", [])
+    if not audit_trail:
+        st.caption("No events yet.")
+    else:
+        for event in reversed(audit_trail):
+            ts = event.get("timestamp", "")[:19].replace("T", " ")
+            event_type = event.get("event_type", "")
+            filename = event.get("filename", "")
+            payload = event.get("payload", {})
+            payload_str = ", ".join(f"{k}: {v}" for k, v in payload.items())
+            st.markdown(f"**{ts}** — `{event_type}`  \n{filename}  \n_{payload_str}_")
+
 # ── 1. Policy Document ───────────────────────────────────────────────────────
 st.header("1. Policy Document")
 
@@ -76,6 +93,13 @@ if policy_file is not None:
         st.session_state.get("policy_store") is None
         or st.session_state.get("policy_filename") != policy_file.name
     ):
+        policy_size_kb = policy_save_path.stat().st_size / 1024
+        log_audit_event(
+            st.session_state,
+            "document_uploaded",
+            policy_file.name,
+            {"size_kb": round(policy_size_kb, 2), "format": policy_save_path.suffix.lower()},
+        )
         with st.spinner("Chunking and indexing policy document..."):
             try:
                 index, chunks = ingest_policy_document(str(policy_save_path))
@@ -115,6 +139,13 @@ with open(save_path, "wb") as f:
 size_kb = save_path.stat().st_size / 1024
 st.success(f"Uploaded: **{uploaded_file.name}** ({size_kb:.1f} KB) — saved to `{save_path}`")
 
+log_audit_event(
+    st.session_state,
+    "document_uploaded",
+    uploaded_file.name,
+    {"size_kb": round(size_kb, 2), "format": save_path.suffix.lower()},
+)
+
 # ── Text extraction ──────────────────────────────────────────────────────────
 try:
     document_text = extract_text(str(save_path))
@@ -133,6 +164,13 @@ if st.button("Extract clinical data", type="primary"):
         try:
             extraction = extract_clinical_data(document_text)
             store_extraction(st.session_state, uploaded_file.name, extraction)
+            total_fields, low_conf_count = count_fields(extraction)
+            log_audit_event(
+                st.session_state,
+                "extraction_complete",
+                uploaded_file.name,
+                {"total_fields": total_fields, "low_confidence_count": low_conf_count},
+            )
         except Exception as e:
             st.error(f"Extraction failed: {e}")
             st.stop()
@@ -224,13 +262,39 @@ else:
                 retrieved_chunks = retrieve_policy_chunks(query, index, chunks)
 
                 # Claude Opus reasons over extraction + rules + retrieved chunks
-                determination_result = reason_against_policy(result, rule_results, retrieved_chunks)
+                raw_determination = reason_against_policy(result, rule_results, retrieved_chunks)
+
+                # Apply escalation BEFORE storing — no raw pre-escalation result ever stored
+                determination_result = apply_escalation(rule_results, raw_determination)
 
                 st.session_state["determinations"][uploaded_file.name] = {
                     "determination_result": determination_result,
                     "rule_results": rule_results,
                     "retrieved_chunks": retrieved_chunks,
                 }
+
+                # Build and store the unified report
+                report = build_report(
+                    uploaded_file.name,
+                    result,
+                    rule_results,
+                    determination_result,
+                )
+                st.session_state["reports"][uploaded_file.name] = report
+
+                # Audit trail event
+                rules_passed = sum(1 for r in rule_results if r["passed"])
+                rules_failed = sum(1 for r in rule_results if not r["passed"])
+                log_audit_event(
+                    st.session_state,
+                    "policy_check_complete",
+                    uploaded_file.name,
+                    {
+                        "determination": determination_result["determination"],
+                        "rules_passed": rules_passed,
+                        "rules_failed": rules_failed,
+                    },
+                )
             except Exception as e:
                 st.error(f"Policy check failed: {e}")
                 st.stop()
@@ -238,43 +302,122 @@ else:
     policy_check = st.session_state.get("determinations", {}).get(uploaded_file.name)
 
     if policy_check:
-        rule_results = policy_check["rule_results"]
-        determination_result = policy_check["determination_result"]
-        retrieved_chunks = policy_check["retrieved_chunks"]
+        report = st.session_state.get("reports", {}).get(uploaded_file.name)
 
-        # Rule results
-        st.subheader("Rule Evaluation")
-        for rule in rule_results:
-            icon = "✓" if rule["passed"] else "✗"
-            with st.expander(f"{icon} {rule['description']}"):
-                st.markdown(f"**Rule ID:** `{rule['rule_id']}`")
-                st.markdown(f"**Status:** {'Pass' if rule['passed'] else 'Fail'}")
-                st.markdown(f"**Reason:** {rule['reason']}")
+        if report is None:
+            st.error("Report not found — please re-run the policy check.")
+            st.stop()
 
-        # Determination badge
-        st.subheader("Audit Determination")
-        determination = determination_result["determination"]
-        if determination == "APPROVED":
-            st.success(f"## {determination}")
-        elif determination == "FLAGGED":
-            st.warning(f"## {determination}")
-        else:
-            st.error(f"## {determination}")
+        # ── Two-column layout ─────────────────────────────────────────────
+        left_col, right_col = st.columns(2)
 
-        # Reasoning — always shown, never silent
-        with st.expander("Claude's reasoning", expanded=True):
-            st.markdown(determination_result["reasoning"])
+        # LEFT: Extracted clinical data with inline source citations
+        with left_col:
+            st.subheader("Extracted Clinical Data")
 
-        # Cited policy excerpts
-        cited = determination_result.get("cited_chunks") or []
-        if cited:
-            with st.expander("Cited policy excerpts"):
-                for i, excerpt in enumerate(cited, 1):
-                    st.markdown(f"**Excerpt {i}:**")
-                    st.markdown(f"> {excerpt}")
+            extraction = report["extraction"]
 
-        # Debug: all retrieved policy chunks
-        with st.expander("Debug: retrieved policy chunks"):
-            for i, chunk in enumerate(retrieved_chunks, 1):
-                st.markdown(f"**Chunk {i}:**")
-                st.text(chunk)
+            st.markdown("**Vitals**")
+            vitals = extraction.get("vitals") or {}
+            vitals_found = [v for v in vitals.values() if v is not None]
+            if vitals_found:
+                for field_name, field_data in vitals.items():
+                    if field_data is None:
+                        continue
+                    label = field_name.replace("_", " ").title()
+                    value = field_data.get("value", "—")
+                    conf = field_data.get("confidence", "unknown")
+                    source = field_data.get("source_text", "")
+                    source_preview = source[:120] + ("..." if len(source) > 120 else "")
+                    st.caption(f"{label}: **{value}** — confidence: `{conf}`")
+                    st.caption(f"Source: {source_preview}")
+                    if len(source) > 120:
+                        with st.expander(f"Full source: {label}"):
+                            st.markdown(f"> {source}")
+            else:
+                st.info("No vitals extracted.")
+
+            st.markdown("**Diagnoses**")
+            diagnoses = extraction.get("diagnoses") or []
+            if diagnoses:
+                for dx in diagnoses:
+                    icd = f" ({dx['icd_code']})" if dx.get("icd_code") else ""
+                    conf = dx.get("confidence", "unknown")
+                    source = dx.get("source_text", "")
+                    source_preview = source[:120] + ("..." if len(source) > 120 else "")
+                    st.caption(f"{dx.get('value', '—')}{icd} — confidence: `{conf}`")
+                    st.caption(f"Source: {source_preview}")
+                    if len(source) > 120:
+                        with st.expander(f"Full source: {dx.get('value', '')}"):
+                            st.markdown(f"> {source}")
+            else:
+                st.info("No diagnoses extracted.")
+
+            st.markdown("**Medications**")
+            medications = extraction.get("medications") or []
+            if medications:
+                for med in medications:
+                    conf = med.get("confidence", "unknown")
+                    source = med.get("source_text", "")
+                    source_preview = source[:120] + ("..." if len(source) > 120 else "")
+                    st.caption(f"{med.get('value', '—')} — confidence: `{conf}`")
+                    st.caption(f"Source: {source_preview}")
+                    if len(source) > 120:
+                        with st.expander(f"Full source: {med.get('value', '')}"):
+                            st.markdown(f"> {source}")
+            else:
+                st.info("No medications extracted.")
+
+        # RIGHT: Determination and rule results
+        with right_col:
+            # Determination badge — always first
+            determination = report["determination"]
+            if determination == "APPROVED":
+                st.success(f"## {determination}")
+            elif determination == "ESCALATE_TO_HUMAN":
+                st.error(f"## {determination}")
+            else:
+                st.warning(f"## {determination}")
+
+            # Escalation reason — directly under badge, only if escalated
+            escalation_reason = report.get("escalation_reason", "")
+            if escalation_reason:
+                st.warning(f"**Escalation reason:** {escalation_reason}")
+
+            # Reasoning expander — directly beneath determination badge
+            with st.expander("Claude's reasoning", expanded=True):
+                st.markdown(report["reasoning"])
+
+            # Cited policy excerpts
+            cited = report.get("cited_chunks") or []
+            if cited:
+                with st.expander("Cited policy excerpts"):
+                    for i, excerpt in enumerate(cited, 1):
+                        st.markdown(f"**Excerpt {i}:**")
+                        st.markdown(f"> {excerpt}")
+
+            # Rule evaluation results
+            st.subheader("Rule Evaluation")
+            for rule in report["rule_results"]:
+                icon = "✓" if rule["passed"] else "✗"
+                with st.expander(f"{icon} {rule['description']}"):
+                    st.markdown(f"**Rule ID:** `{rule['rule_id']}`")
+                    st.markdown(f"**Status:** {'Pass' if rule['passed'] else 'Fail'}")
+                    st.markdown(f"**Reason:** {rule['reason']}")
+
+            # Debug: all retrieved policy chunks — collapsed
+            retrieved_chunks = policy_check["retrieved_chunks"]
+            with st.expander("Debug: retrieved policy chunks"):
+                for i, chunk in enumerate(retrieved_chunks, 1):
+                    st.markdown(f"**Chunk {i}:**")
+                    st.text(chunk)
+
+        # ── PDF Download Button ───────────────────────────────────────────
+        st.divider()
+        pdf_bytes = export_report_to_pdf(report)
+        st.download_button(
+            label="Download audit report (PDF)",
+            data=pdf_bytes,
+            file_name=f"audit_report_{uploaded_file.name}.pdf",
+            mime="application/pdf",
+        )

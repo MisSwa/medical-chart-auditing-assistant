@@ -5,6 +5,7 @@ import os
 
 import faiss
 import numpy as np
+from langsmith import traceable
 from openai import OpenAI
 
 from extractor import extract_text
@@ -28,6 +29,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = OVERLAP) 
     return chunks
 
 
+@traceable(name="embed_chunks", run_type="embedding")
 def embed_chunks(chunks: list[str]) -> list[list[float]]:
     """Embed a list of text chunks using text-embedding-3-small. Returns list of float vectors."""
     client = _get_openai_client()
@@ -47,6 +49,7 @@ def build_faiss_index(chunks: list[str], embeddings: list[list[float]]):
     return index, chunks
 
 
+@traceable(name="retrieve_policy_chunks", run_type="retriever")
 def retrieve_policy_chunks(query: str, index, chunks: list[str], k: int = TOP_K) -> list[str]:
     """
     Embed query and return the top-k most relevant policy chunks from the FAISS index.
@@ -59,6 +62,7 @@ def retrieve_policy_chunks(query: str, index, chunks: list[str], k: int = TOP_K)
     return [chunks[i] for i in indices[0] if i < len(chunks)]
 
 
+@traceable(name="ingest_policy_document")
 def ingest_policy_document(filepath: str):
     """
     Orchestrate full policy ingestion: extract text → chunk → embed → build index.

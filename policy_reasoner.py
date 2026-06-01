@@ -8,6 +8,7 @@ import json
 import os
 
 from anthropic import Anthropic
+from langsmith import traceable
 
 VALID_DETERMINATIONS = {"APPROVED", "FLAGGED", "ESCALATE_TO_HUMAN"}
 
@@ -62,6 +63,7 @@ def build_reasoning_prompt(
     )
 
 
+@traceable(name="reason_against_policy", run_type="llm")
 def reason_against_policy(
     extraction: dict, rule_results: list[dict], policy_chunks: list[str]
 ) -> dict:
