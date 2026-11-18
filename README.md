@@ -4,6 +4,16 @@ An AI-assisted tool that extracts structured clinical data from patient charts, 
 
 The system makes no final coverage decisions. Any case that does not fully and unambiguously meet all approval criteria is escalated to a human auditor.
 
+## At a glance
+
+| | |
+|---|---|
+| **Problem** | Chart audits require manually matching clinical evidence to insurance coverage rules |
+| **What it does** | Extracts vitals, diagnoses, and medications with source citations; checks them against rules and policy via RAG; produces a traceable audit report |
+| **How** | Claude Sonnet for extraction, Claude Opus for policy reasoning, FAISS retrieval, OCR for scanned charts |
+| **Safety** | Mandatory escalation: any case not clearly meeting every criterion goes to a human auditor; every field anchored to source text |
+| **Stack** | Python · Claude · OpenAI embeddings · FAISS · Tesseract OCR · Streamlit · fpdf2 · pytest |
+
 ---
 
 ## What it does
@@ -37,7 +47,7 @@ brew install tesseract
 **1. Clone the repository**
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/MisSwa/medical-chart-auditing-assistant.git
 cd medical-chart-auditing-assistant
 ```
 
@@ -137,6 +147,22 @@ uploads/                Uploaded documents (created at runtime, gitignored)
 ```
 
 ---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Clinical chart<br/>PDF / scanned PDF / text / EHR export] --> B[Extract<br/>Claude Sonnet: vitals, diagnoses, meds<br/>+ source citations]
+    P[Policy document] --> Q[Chunk + embed<br/>FAISS index]
+    B --> C[Rules engine<br/>structured coverage rules]
+    Q --> D[Policy reasoning<br/>Claude Opus + retrieved policy]
+    C --> D
+    D --> E{Escalation check}
+    E -->|all criteria clearly met| F[APPROVED]
+    E -->|anything else| G[ESCALATE_TO_HUMAN]
+    F --> R[Audit report + PDF export]
+    G --> R
+```
 
 ## Architecture notes
 
